@@ -1,0 +1,40 @@
+{
+  "name": "uploader",
+  "version": "1.0.0",
+  "description": "Upload large files",
+  "main": "server.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "mocha --reporter spec",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kishanpradhan/uploader.git"
+  },
+  "keywords": [
+    "uploader",
+    "large",
+    "files",
+    "pause",
+    "and",
+    "resume",
+    "file",
+    "uploads"
+  ],
+  "author": "Kishan Pradhan",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/kishanpradhan/uploader/issues"
+  },
+  "homepage": "https://github.com/kishanpradhan/uploader#readme",
+  "dependencies": {
+    "socket.io": "^2.2.0"
+  },
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "mocha": "^5.2.0"
+  }
+}
