@@ -85,9 +85,11 @@ for(let i in signals){
 		console.log("Signal", signal);
 		for(let Name in Files) {
 			// Lock file for writting
+			/*
 			fs.write(Files[Name]['Handler'], Files[Name]['Data'], null, 'Binary', function(err, Writen){
 				console.log("Writting file ", Name)
 			});
+			*/
 		}
 	});
 }
