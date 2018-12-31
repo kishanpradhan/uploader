@@ -1,8 +1,26 @@
 const fs = require("fs"),
 	config = require("../config"),
 	File = require("./file").File,
-	Uploader = require("./file").Uploader
+	Uploader = require("./file").Uploader,
+	repo = require("./repository")
 
+
+function respond(res, data, code = 200, message = ""){
+	let sendData = {
+		"status": "failure",
+		"code": code,
+		"data": {},
+		"message": ""
+	}
+	if (code == "200") {
+		sendData["status"] = "success";
+		sendData["data"] = data
+	} else {
+		sendData["message"] = message;
+	}
+
+	res.json(sendData);
+}
 
 exports.serveStatic = function(req, res) {
 	fs.readFile(__dirname + '/index.html', function (err, data) {
@@ -13,6 +31,29 @@ exports.serveStatic = function(req, res) {
 		res.writeHead(200);
 		res.end(data);
 	});
+}
+
+exports.fileHandler = function(req, res) {
+	let promise;
+	if(req.method.toLowerCase() == "get") {
+		promise = repo(req.query.user).getAll();
+	} else if(req.method.toLowerCase() == "post") {
+		promise = repo.create(req.query.user);
+	}
+	promise.then((data) => {
+		respond(res, data);
+	}).catch((err) => {
+		respond(res, "", 500, err);
+	});
+}
+
+exports.singleFileHandler = function(req, res) {
+	let promise;
+	if(req.method.toLowerCase() == "get") {
+		promise = repo.get(req.query.user);
+	} else if(req.method.toLowerCase() == "post") {
+		promise = repo.update(req.query.user);
+	}
 }
 
 let Files = {};
@@ -47,47 +88,19 @@ exports.socketHandler = function(io) {
 		});
 		socket.on('Start', function (data) { //data contains the variables that we passed through in the html file
 			console.log("Starting file upload", data);
-			let file = new File(data['Name']);
-			console.log("Starting file upload");
+			let file = new File(data['Name'], data['Size']);
 			let uploader = new Uploader(user, file);
-			console.log("Starting file upload");
 			uploader.start().then((res) => {
 				console.log("RESUT", res);
+				// let Place = Stat.size / 524288;
+				socket.emit('MoreData', { 'Place' : res.cursor, Percent : res.progress });
 			}).catch((err) => {
 				console.log("Error", err);
 				socket.emit('Error', err);
 			});
-			console.log("Starting file upload");
-
-
-			/*
-			var Name = data['Name'];
-			Files[Name] = {  //Create a new Entry in The Files Variable
-				FileSize : data['Size'],
-				Data     : "",
-				Downloaded : 0
-			}
-			var Place = 0;
-			try{
-				var Stat = fs.statSync('Temp/' +  Name);
-				if(Stat.isFile()) {
-					Files[Name]['Downloaded'] = Stat.size;
-					Place = Stat.size / 524288;
-				}
-			} catch(er){} //It's a New File
-			fs.open("Temp/" + Name, "a", 0755, function(err, fd){
-				if(err) {
-					console.log(err);
-				} else {
-					Files[Name]['Handler'] = fd; //We store the file handler so we can write to it later
-					console.log("Place = ", Place);
-					socket.emit('MoreData', { 'Place' : Place, Percent : 0 });
-				}
-			});
-			*/
 		});
 
-		socket.on('Upload', function (data){
+		socket.on('Upload_old', function (data){
 			var Name = data['Name'];
 			console.log("Uploading file", Name);
 			Files[Name]['Downloaded'] += data['Data'].length;
@@ -133,6 +146,25 @@ exports.socketHandler = function(io) {
 				var Percent = (Files[Name]['Downloaded'] / Files[Name]['FileSize']) * 100;
 				socket.emit('MoreData', { 'Place' : Place, 'Percent' :  Percent});
 			}
+		});
+		socket.on('Upload', function (data){
+			// console.log("Uploading file", data['Name']);
+			
+			let file = new File(data['Name'], data['Size']);
+			let uploader = new Uploader(user, file);
+			uploader.upload(data).then((res) => {
+				// console.log("RESUT", res);
+				// socket.emit('MoreData', { 'Place' : res.cursor, Percent : res.progress });
+				if(res.Percent == 100) {
+					socket.emit("Done", "url_to_file");
+				} else {
+					socket.emit('MoreData', res);
+				}
+			}).catch((err) => {
+				console.log("Error", err);
+				socket.emit('Error', err);
+			});
+
 		});
 	});
 }

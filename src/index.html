@@ -13,8 +13,54 @@
         </span>
     </div>
 
+    <div id="ListFilesBox">
+        <h2>List of files</h2>
+		<div id="listFiles">
+			<div id="1">
+				<span> File 1 </span>
+				<span> 75% </span>
+				<span> uploading </span>
+				<span> 12345 </span>
+			</div>
+		</div>
+    </div>
+
 	<script>
 		window.addEventListener("load", Ready); 
+		let request = {
+			get: (url, headers = {}) => {
+				return new Promise((resolve, reject) => {
+					var xhttp = new XMLHttpRequest();
+					xhttp.onreadystatechange = function() {
+						if (this.readyState == 4 && this.status == 200) {
+							console.log(this.responseText);
+							resolve(JSON.parse(this.responseText));
+						}
+					};
+					xhttp.open("GET", url, true);
+					xhttp.send();
+				});
+			}
+		};
+		let user_files = [];
+		var chunk_size = 524288;
+		// var chunk_size = 10485760;
+		
+		function displayFiles(files) {
+			let file_html = "";
+			for(let file of files) {
+				console.log(file);
+				file_html += `
+				<div id="${file._id}">
+					<span>${file.name}</span> ||
+					<span>${file.progress}</span> ||
+					<span>${file.status}</span> ||
+					<span>${new Date(file.created)}</span>
+				</div>
+				`;
+			}
+			document.getElementById("listFiles").innerHTML = file_html;
+		}
 		
 		function Ready(){ 
 			if(window.File && window.FileReader){ //These are the relevant HTML5 objects that we are going to use 
@@ -25,6 +71,17 @@
 			{
 				document.getElementById('UploadArea').innerHTML = "Your Browser Doesn't Support The File API Please Update Your Browser";
 			}
+
+			let params = (new URL(document.location)).searchParams;
+			let user = params.get("user");
+			request.get("/files?user=" + user).then((res) => {
+				user_files = res.data;
+				console.log(user_files);
+				// Display files
+				displayFiles(user_files);
+			}).catch((err) => {
+				console.log("EE", err);
+			});
 		}
 
 		var SelectedFile;
@@ -45,12 +102,18 @@
 				var Content = "<span id='NameArea'>Uploading " + SelectedFile.name + " as " + Name + "</span>";
 				Content += '<div id="ProgressContainer"><div id="ProgressBar"></div></div><span id="percent">0%</span>';
 				Content += "<span id='Uploaded'> - <span id='MB'>0</span>/" + Math.round(SelectedFile.size / 1048576) + "MB</span>";
+				Content += `
+					<div>
+					<button id='play_btn' state='playing'>Pause</button>
+					<button id='cancel_btn'>Cancel</button>
+				</div>`;
+
 				document.getElementById('UploadArea').innerHTML = Content;
 				FReader.onload = function(evnt){
-					setTimeout(() => {
+					// setTimeout(() => {
 						console.log("Sending file ");
 						socket.emit('Upload', { 'Name' : Name, Data : evnt.target.result });
-					}, 500);
+					// }, 500);
 				}
 				console.log("Starting file upload");
 				socket.emit('Start', { 'Name' : Name, 'Size' : SelectedFile.size });
@@ -63,12 +126,12 @@
 
 		socket.on('MoreData', function (data){
 			UpdateBar(data['Percent']);
-			var Place = data['Place'] * 524288; //The Next Blocks Starting Position
+			var Place = data['Place'] * chunk_size; //The Next Blocks Starting Position
 			console.log("Place =", Place);
 			var NewFile; //The Variable that will hold the new Block of Data
 			// console.log(SelectedFile);
-			// 524288 -> Get this value from server
-			NewFile = SelectedFile.slice(Place, Place + Math.min(524288, (SelectedFile.size - Place)));
+			// chunk_size -> Get this value from server
+			NewFile = SelectedFile.slice(Place, Place + Math.min(chunk_size, (SelectedFile.size - Place)));
 			FReader.readAsBinaryString(NewFile);
 		});
 
