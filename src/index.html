@@ -1,31 +1,38 @@
 <html>
 	<head>
+		<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
 		<script src="/socket.io/socket.io.js"></script>
 	</head>
 <body> 
-    <div id="UploadBox">
-        <h2>Video Uploader</h2>
-        <span id='UploadArea'>
-            <label for="FileBox">Choose A File: </label><input type="file" id="FileBox"><br>
-            <label for="NameBox">Name: </label><input type="text" id="NameBox"><br>
- 
-            <button  type='button' id='UploadButton' class='Button'>Upload</button>
-        </span>
-    </div>
-					<button id='play_btn1' state='playing' onclick="playHandler(this)">Pause</button>
-					<button id='cancel_btn1' onclick="cancel(this)">Cancel</button>
+	<div class="container">
+		<div id="UploadBox">
+			<h2>Video Uploader</h2>
+			<span id='UploadArea'>
+				<label for="FileBox">Choose A File: </label><input type="file" id="FileBox"><br>
+				<label for="NameBox">Name: </label><input type="text" id="NameBox"><br>
 
-    <div id="ListFilesBox">
-        <h2>List of files</h2>
-		<div id="listFiles">
-			<div id="1">
-				<span> File 1 </span>
-				<span> 75% </span>
-				<span> uploading </span>
-				<span> 12345 </span>
-			</div>
+				<button  type='button' id='UploadButton' class='Button'>Upload</button>
+			</span>
 		</div>
-    </div>
+
+		<div id="ListFilesBox">
+			<h2>List of files</h2>
+			<table class="table">
+				<thead>
+					<tr>
+						<th scope="col">#</th>
+						<th scope="col">Name</th>
+						<th scope="col">Progress</th>
+						<th scope="col">Status</th>
+						<th scope="col">Size</th>
+						<th scope="col">Created</th>
+					</tr>
+				</thead>
+				<tbody id="file_data">
+				</tbody>
+			</table>
+		</div>
+	</div>
 
 	<script>
 		window.addEventListener("load", Ready); 
@@ -62,21 +69,31 @@
 		let user_files = [];
 		var chunk_size = 524288;
 		// var chunk_size = 10485760;
+		var SelectedFile;
+		var socket = io.connect(window.location.origin + '?user='+user);
+		var AdminSocket = io("/admin").connect(window.location.origin + '?user='+user);
+		var FReader, upload_state = "stopped", current_data;
+		var Name;
 		
 		function displayFiles(files) {
 			let file_html = "";
+			let counter = 1;
 			for(let file of files) {
 				// console.log(file);
 				file_html += `
-				<div id="${file._id}">
-					<span>${file.name}</span> ||
-					<span>${file.progress}</span> ||
-					<span>${file.status}</span> ||
-					<span>${new Date(file.created)}</span>
-				</div>
+				<tr id="${file._id}">
+					<th scope="row">${counter}</th>
+					<td>${file.name}</td>
+					<td>${file.progress}</td>
+					<td>${file.status}</td>
+					<td>${file.size}</td>
+					<td>${new Date(file.created)}</td>
+					<td></td>
+				</tr>
 				`;
+				counter += 1;
 			}
-			document.getElementById("listFiles").innerHTML = file_html;
+			document.getElementById("file_data").innerHTML = file_html;
 		}
 
 		function playHandler(elem) {
@@ -85,12 +102,10 @@
 				elem.setAttribute("state", "paused");
 				elem.innerHTML = "Resume";
 				upload_state = "paused";
-				// Stop sending file
 			} else {
 				elem.setAttribute("state", "playing");
 				elem.innerHTML = "Pause";
 				upload_state = "uploading";
-				// REsume sending file
 				if(current_data) {
 					FReader.readAsBinaryString(current_data);
 					current_data = null;
@@ -99,7 +114,7 @@
 		}
 
 		function cancel(elem) {
-			console.log("SSS", "/files/" + SelectedFile.name + "?user=" + user);
+			// console.log("SSS", "/files/" + SelectedFile.name + "?user=" + user);
 			upload_state = "canceled";
 			request.delete("/files/" + SelectedFile.name + "?user=" + user).then((res) => {
 				console.log(res);
@@ -122,24 +137,18 @@
 			request.get("/files?user=" + user).then((res) => {
 				user_files = res.data;
 				// console.log(user_files);
-				// Display files
 				displayFiles(user_files);
 			}).catch((err) => {
 				console.log("EE", err);
 			});
 		}
 
-		var SelectedFile;
 		function FileChosen(evnt) {
 			SelectedFile = evnt.target.files[0];
 			// console.log(SelectedFile);
 			document.getElementById('NameBox').value = SelectedFile.name;
 		}
 
-		var socket = io.connect(window.location.origin + '?user='+user);
-		var AdminSocket = io("/admin").connect(window.location.origin + '?user='+user);
-		var FReader, upload_state = "stopped", current_data;
-		var Name;
 		function StartUpload() {
 			if(document.getElementById('FileBox').value != "")
 			{
@@ -150,8 +159,8 @@
 				Content += "<span id='Uploaded'> - <span id='MB'>0</span>/" + Math.round(SelectedFile.size / 1048576) + "MB</span>";
 				Content += `
 					<div>
-					<button id='play_btn' state='playing' onclick="playHandler">Pause</button>
-					<button id='cancel_btn' onclick="cancel">Cancel</button>
+					<button id='play_btn' state='playing' onclick="playHandler(this)">Pause</button>
+					<button id='cancel_btn' onclick="cancel(this)">Cancel</button>
 				</div>`;
 
 				document.getElementById('UploadArea').innerHTML = Content;
@@ -199,6 +208,7 @@
 		socket.on("Done", function(data) {
 			UpdateBar(100);
 			console.log("File uploaded successfully");
+			location.reload();
 		});
 
 		socket.on("Error", function(data) {

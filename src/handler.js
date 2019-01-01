@@ -38,12 +38,14 @@ exports.FileHandler = function(req, res) {
 	if(req.method.toLowerCase() == "get") {
 		promise = repo(req.query.user).getAll();
 	} else if(req.method.toLowerCase() == "post") {
-		promise = repo.create(req.query.user);
+		let file = new File(user, data['Name'], data['Size']);
+		let uploader = new Uploader(user, file);
+		promise = uploader.start();
 	}
 	promise.then((data) => {
 		respond(res, data);
 	}).catch((err) => {
-		respond(res, "", 500, err);
+		respond(res, "", 500, err.messsage || err);
 	});
 }
 
