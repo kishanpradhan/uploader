@@ -6,3 +6,4 @@ package-lock.json
 Temp/
 env/
 settings.js
+result/

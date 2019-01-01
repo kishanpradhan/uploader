@@ -11,7 +11,7 @@ class FileRepo {
 
 	getAll() {
 		// return new Promise((resolve, reject) => {
-			return this.collection.find({ user: this.user }).toArray();
+			return this.collection.find({ user: this.user, status: { $ne: "deleted" } }).toArray();
 		// });
 	}
 
@@ -23,6 +23,21 @@ class FileRepo {
 
 	updateOne(query, data, options = {}) {
 		return this.collection.findOneAndUpdate(query, data, options);
+	}
+
+	delete(id) {
+		// return new Promise((resolve, reject) => {
+		return this.collection.deleteOne({ user: this.user, name: id });
+		/*
+			return this.updateOne(
+				{ user: this.user, name: id },
+				{ $set: {
+					status: "deleted",
+					updated: Date.now()
+				}}
+			);
+			*/
+		// });
 	}
 }
 

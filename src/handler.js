@@ -33,7 +33,7 @@ exports.serveStatic = function(req, res) {
 	});
 }
 
-exports.fileHandler = function(req, res) {
+exports.FileHandler = function(req, res) {
 	let promise;
 	if(req.method.toLowerCase() == "get") {
 		promise = repo(req.query.user).getAll();
@@ -47,48 +47,36 @@ exports.fileHandler = function(req, res) {
 	});
 }
 
-exports.singleFileHandler = function(req, res) {
+exports.SingleFileHandler = function(req, res) {
 	let promise;
-	if(req.method.toLowerCase() == "get") {
-		promise = repo.get(req.query.user);
+	if(req.method.toLowerCase() == "delete") {
+		new File(req.query.user, req.params.id).delete();
+		promise = repo(req.query.user).delete(req.params.id);
 	} else if(req.method.toLowerCase() == "post") {
 		promise = repo.update(req.query.user);
 	}
+	promise.then((data) => {
+		respond(res, data);
+	}).catch((err) => {
+		respond(res, "", 500, err);
+	});
 }
 
 let Files = {};
 exports.socketHandler = function(io) {
+	// console.log(io.use);
+	io.use(function(socket, next) {
+		if (socket.handshake.query.user) return next();
+		next(new Error('No auth. Please provide a user.'));
+	});
+
 	io.on('connection', function (socket) {
-		let user = "kishan";
-		socket.on('Start_old', function (data) { //data contains the variables that we passed through in the html file
-			console.log("Starting file upload");
-			var Name = data['Name'];
-			Files[Name] = {  //Create a new Entry in The Files Variable
-				FileSize : data['Size'],
-				Data     : "",
-				Downloaded : 0
-			}
-			var Place = 0;
-			try{
-				var Stat = fs.statSync('Temp/' +  Name);
-				if(Stat.isFile()) {
-					Files[Name]['Downloaded'] = Stat.size;
-					Place = Stat.size / 524288;
-				}
-			} catch(er){} //It's a New File
-			fs.open("Temp/" + Name, "a", 0755, function(err, fd){
-				if(err) {
-					console.log(err);
-				} else {
-					Files[Name]['Handler'] = fd; //We store the file handler so we can write to it later
-					console.log("Place = ", Place);
-					socket.emit('MoreData', { 'Place' : Place, Percent : 0 });
-				}
-			});
-		});
+		let user = socket.handshake.query.user;
+		console.log("Socket connected", user);
+
 		socket.on('Start', function (data) { //data contains the variables that we passed through in the html file
 			console.log("Starting file upload", data);
-			let file = new File(data['Name'], data['Size']);
+			let file = new File(user, data['Name'], data['Size']);
 			let uploader = new Uploader(user, file);
 			uploader.start().then((res) => {
 				console.log("RESUT", res);
@@ -100,61 +88,12 @@ exports.socketHandler = function(io) {
 			});
 		});
 
-		socket.on('Upload_old', function (data){
-			var Name = data['Name'];
-			console.log("Uploading file", Name);
-			Files[Name]['Downloaded'] += data['Data'].length;
-			Files[Name]['Data'] += data['Data'];
-			if(Files[Name]['Downloaded'] == Files[Name]['FileSize']) //If File is Fully Uploaded
-			{
-				console.log("Done", config.QUEUE.db);
-				config.QUEUE.db.call("broker.download", {
-					file_name: Name, 
-					data: Files[Name]['Data'],
-					path: "Temp/"
-				}, {});
-				socket.emit("Done", "url_to_file");
-				/*
-				fs.write(Files[Name]['Handler'], Files[Name]['Data'], null, 'Binary', function(err, Writen){
-					//Get Thumbnail Here
-					socket.emit("Done", "url_to_file");
-				});
-				*/
-			}
-			else if(Files[Name]['Data'].length > 10485760){ //If the Data Buffer reaches 10MB = 10485760 bytes
-				config.QUEUE.db.call("broker.download", {
-					file_name: Name, 
-					data: Files[Name]['Data'],
-					path: "Temp/"
-				}, {});
-				Files[Name]['Data'] = ""; //Reset The Buffer
-				var Place = Files[Name]['Downloaded'] / 524288;
-				var Percent = (Files[Name]['Downloaded'] / Files[Name]['FileSize']) * 100;
-				socket.emit('MoreData', { 'Place' : Place, 'Percent' :  Percent});
-				/*
-				fs.write(Files[Name]['Handler'], Files[Name]['Data'], null, 'Binary', function(err, Writen){
-					Files[Name]['Data'] = ""; //Reset The Buffer
-					var Place = Files[Name]['Downloaded'] / 524288;
-					var Percent = (Files[Name]['Downloaded'] / Files[Name]['FileSize']) * 100;
-					socket.emit('MoreData', { 'Place' : Place, 'Percent' :  Percent});
-				});
-				*/
-			}
-			else
-			{
-				var Place = Files[Name]['Downloaded'] / 524288;
-				var Percent = (Files[Name]['Downloaded'] / Files[Name]['FileSize']) * 100;
-				socket.emit('MoreData', { 'Place' : Place, 'Percent' :  Percent});
-			}
-		});
 		socket.on('Upload', function (data){
 			// console.log("Uploading file", data['Name']);
 			
-			let file = new File(data['Name'], data['Size']);
+			let file = new File(user, data['Name'], data['Size']);
 			let uploader = new Uploader(user, file);
 			uploader.upload(data).then((res) => {
-				// console.log("RESUT", res);
-				// socket.emit('MoreData', { 'Place' : res.cursor, Percent : res.progress });
 				if(res.Percent == 100) {
 					socket.emit("Done", "url_to_file");
 				} else {
@@ -164,7 +103,10 @@ exports.socketHandler = function(io) {
 				console.log("Error", err);
 				socket.emit('Error', err);
 			});
+		});
 
+		socket.on('disconnect', function (reason){
+			console.log("Disconnected", user, reason);
 		});
 	});
 }

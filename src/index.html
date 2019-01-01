@@ -12,6 +12,8 @@
             <button  type='button' id='UploadButton' class='Button'>Upload</button>
         </span>
     </div>
+					<button id='play_btn1' state='playing' onclick="playHandler(this)">Pause</button>
+					<button id='cancel_btn1' onclick="cancel(this)">Cancel</button>
 
     <div id="ListFilesBox">
         <h2>List of files</h2>
@@ -27,17 +29,32 @@
 
 	<script>
 		window.addEventListener("load", Ready); 
+		let params = (new URL(document.location)).searchParams;
+		let user = params.get("user");
 		let request = {
 			get: (url, headers = {}) => {
 				return new Promise((resolve, reject) => {
 					var xhttp = new XMLHttpRequest();
 					xhttp.onreadystatechange = function() {
 						if (this.readyState == 4 && this.status == 200) {
-							console.log(this.responseText);
+							// console.log(this.responseText);
 							resolve(JSON.parse(this.responseText));
 						}
 					};
 					xhttp.open("GET", url, true);
+					xhttp.send();
+				});
+			},
+			delete: (url, headers = {}) => {
+				return new Promise((resolve, reject) => {
+					var xhttp = new XMLHttpRequest();
+					xhttp.onreadystatechange = function() {
+						if (this.readyState == 4 && this.status == 200) {
+							// console.log(this.responseText);
+							resolve(JSON.parse(this.responseText));
+						}
+					};
+					xhttp.open("DELETE", url, true);
 					xhttp.send();
 				});
 			}
@@ -49,7 +66,7 @@
 		function displayFiles(files) {
 			let file_html = "";
 			for(let file of files) {
-				console.log(file);
+				// console.log(file);
 				file_html += `
 				<div id="${file._id}">
 					<span>${file.name}</span> ||
@@ -60,6 +77,36 @@
 				`;
 			}
 			document.getElementById("listFiles").innerHTML = file_html;
+		}
+
+		function playHandler(elem) {
+			let current_state = elem.getAttribute("state");
+			if(current_state === "playing") {
+				elem.setAttribute("state", "paused");
+				elem.innerHTML = "Resume";
+				upload_state = "paused";
+				// Stop sending file
+			} else {
+				elem.setAttribute("state", "playing");
+				elem.innerHTML = "Pause";
+				upload_state = "uploading";
+				// REsume sending file
+				if(current_data) {
+					FReader.readAsBinaryString(current_data);
+					current_data = null;
+				}
+			}
+		}
+
+		function cancel(elem) {
+			console.log("SSS", "/files/" + SelectedFile.name + "?user=" + user);
+			upload_state = "canceled";
+			request.delete("/files/" + SelectedFile.name + "?user=" + user).then((res) => {
+				console.log(res);
+				location.reload();
+			}).catch((err) => {
+				console.log(err);
+			});
 		}
 		
 		function Ready(){ 
@@ -72,11 +119,9 @@
 				document.getElementById('UploadArea').innerHTML = "Your Browser Doesn't Support The File API Please Update Your Browser";
 			}
 
-			let params = (new URL(document.location)).searchParams;
-			let user = params.get("user");
 			request.get("/files?user=" + user).then((res) => {
 				user_files = res.data;
-				console.log(user_files);
+				// console.log(user_files);
 				// Display files
 				displayFiles(user_files);
 			}).catch((err) => {
@@ -87,14 +132,15 @@
 		var SelectedFile;
 		function FileChosen(evnt) {
 			SelectedFile = evnt.target.files[0];
+			// console.log(SelectedFile);
 			document.getElementById('NameBox').value = SelectedFile.name;
 		}
 
-		var socket = io.connect('http://localhost:8080');
-		var AdminSocket = io("/admin").connect('http://localhost:8080');
-		var FReader;
+		var socket = io.connect(window.location.origin + '?user='+user);
+		var AdminSocket = io("/admin").connect(window.location.origin + '?user='+user);
+		var FReader, upload_state = "stopped", current_data;
 		var Name;
-		function StartUpload(){
+		function StartUpload() {
 			if(document.getElementById('FileBox').value != "")
 			{
 				FReader = new FileReader();
@@ -104,18 +150,21 @@
 				Content += "<span id='Uploaded'> - <span id='MB'>0</span>/" + Math.round(SelectedFile.size / 1048576) + "MB</span>";
 				Content += `
 					<div>
-					<button id='play_btn' state='playing'>Pause</button>
-					<button id='cancel_btn'>Cancel</button>
+					<button id='play_btn' state='playing' onclick="playHandler">Pause</button>
+					<button id='cancel_btn' onclick="cancel">Cancel</button>
 				</div>`;
 
 				document.getElementById('UploadArea').innerHTML = Content;
 				FReader.onload = function(evnt){
 					// setTimeout(() => {
-						console.log("Sending file ");
-						socket.emit('Upload', { 'Name' : Name, Data : evnt.target.result });
+						// if(upload_state == "uploading") {
+							console.log("Sending file ");
+							socket.emit('Upload', { 'Name' : Name, Data : evnt.target.result });
+						// }
 					// }, 500);
 				}
 				console.log("Starting file upload");
+				upload_state = "started";
 				socket.emit('Start', { 'Name' : Name, 'Size' : SelectedFile.size });
 			}
 			else
@@ -124,15 +173,27 @@
 			}
 		}
 
+		function resumeUpload() {
+			if(document.getElementById('FileBox').value != "") {
+				console.log("Resuming file upload");
+				socket.emit('Start', { 'Name' : Name, 'Size' : SelectedFile.size });
+			}
+		}
+
 		socket.on('MoreData', function (data){
 			UpdateBar(data['Percent']);
 			var Place = data['Place'] * chunk_size; //The Next Blocks Starting Position
-			console.log("Place =", Place);
+			console.log("Place =", Place); 
 			var NewFile; //The Variable that will hold the new Block of Data
 			// console.log(SelectedFile);
 			// chunk_size -> Get this value from server
 			NewFile = SelectedFile.slice(Place, Place + Math.min(chunk_size, (SelectedFile.size - Place)));
-			FReader.readAsBinaryString(NewFile);
+			if(upload_state == "paused") {
+				current_data = NewFile;
+			} else {
+				upload_state = "uploading";
+				FReader.readAsBinaryString(NewFile);
+			}
 		});
 
 		socket.on("Done", function(data) {

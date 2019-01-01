@@ -2,9 +2,9 @@ let router = require("express").Router()
 let handler = require("./handler")
 
 router.get("/", handler.serveStatic);
-router.get("/files", handler.fileHandler);
+router.get("/files", handler.FileHandler);
 // router.post("/files", handler.serveStatic);
-// router.post("/files/:id", handler.serveStatic);
+router.delete("/files/:id", handler.SingleFileHandler);
 
 module.exports = {
 	routes: {
