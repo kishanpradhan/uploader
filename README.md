@@ -3,7 +3,10 @@ mongodb >=3.6
 node >=8.9.4  
 redis >=3.0.6  
 rabbitmq >=3.6 (When using Queue)  
-python >=3.6 (When using Queue)  N
+python >=3.6 (When using Queue) 
+
+#### Queue Server(Not using now)
+For anything related to queue goto [queue_server](https://github.com/kishanpradhan/queue_server) and try uploading file.
 
 ## Installation
 1. Install requirements
