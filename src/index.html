@@ -26,7 +26,6 @@
 						<th scope="col">Status</th>
 						<th scope="col">Size</th>
 						<th scope="col">Created</th>
-						<th scope="col">Resume</th>
 						<th scope="col">Delete</th>
 					</tr>
 				</thead>
@@ -76,6 +75,14 @@
 		var AdminSocket = io("/admin").connect(window.location.origin + '?user='+user);
 		var FReader, upload_state = "stopped", current_data;
 		var Name;
+
+		function getSocket(namespace="/") {
+			if(socket) return socket;
+			socket = io(namespace).connect(window.location.origin + '?user='+user);
+
+			socket.on('MoreData', function (data){
+			});
+		}
 		
 		function displayFiles(files) {
 			let file_html = "";
@@ -97,7 +104,6 @@
 					<td>${file.status}</td>
 					<td>${humanize(file.size)}</td>
 					<td>${new Date(file.created)}</td>
-					<td>${functionalities}</td>
 					<td><button onclick="delete_file(this)" class="btn btn-danger">Delete</button></td>
 				</tr>
 				`;
@@ -108,7 +114,7 @@
 
 		function delete_file(elem) {
 			let main_elem = elem.parentElement.parentElement;
-			console.log(main_elem, main_elem.getAttribute("id"), main_elem.remove);
+			// console.log(main_elem, main_elem.getAttribute("id"), main_elem.remove);
 			remove(main_elem.getAttribute("id")).then((res) => {
 				console.log(res);
 				main_elem.remove();
@@ -175,13 +181,12 @@
 		}
 
 		function StartUpload() {
-			if(document.getElementById('FileBox').value != "")
-			{
+			if(document.getElementById('FileBox').value != "") {
 				FReader = new FileReader();
 				Name = document.getElementById('NameBox').value;
 				var Content = "<span id='NameArea'>Uploading " + SelectedFile.name + " as " + Name + "</span>";
 				Content += '<div id="ProgressContainer"><div id="ProgressBar"></div></div><span id="percent">0%</span>';
-				Content += "<span id='Uploaded'> - <span id='MB'>0</span>/" + Math.round(SelectedFile.size / 1048576) + "MB</span>";
+				Content += "<span id='Uploaded'> - <span id='uploaded_size'>0</span>/" + humanize(SelectedFile.size) + "</span>";
 				Content += `
 					<div>
 					<button id='play_btn' state='playing' onclick="playHandler(this)">Pause</button>
@@ -200,9 +205,7 @@
 				console.log("Starting file upload");
 				upload_state = "started";
 				socket.emit('Start', { 'Name' : Name, 'Size' : SelectedFile.size });
-			}
-			else
-			{
+			} else {
 				alert("Please Select A File");
 			}
 		}
@@ -242,9 +245,8 @@
 
 		function UpdateBar(percent){
 			document.getElementById('ProgressBar').style.width = percent + '%';
-			document.getElementById('percent').innerHTML = (Math.round(percent*100)/100) + '%';
-			var MBDone = Math.round(((percent/100.0) * SelectedFile.size) / 1048576);
-			document.getElementById('MB').innerHTML = MBDone;
+			document.getElementById('percent').innerHTML = (Math.round(percent * 100)/100) + '%';
+			document.getElementById('uploaded_size').innerHTML = humanize(((percent/100.0) * SelectedFile.size));
 		}
 
 		function humanize(num, decimals=2) {
