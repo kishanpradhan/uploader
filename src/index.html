@@ -26,6 +26,8 @@
 						<th scope="col">Status</th>
 						<th scope="col">Size</th>
 						<th scope="col">Created</th>
+						<th scope="col">Resume</th>
+						<th scope="col">Delete</th>
 					</tr>
 				</thead>
 				<tbody id="file_data">
@@ -79,21 +81,40 @@
 			let file_html = "";
 			let counter = 1;
 			for(let file of files) {
+				let functionalities = `
+					<span id='ResumeArea'>
+						<input type="file" id="ResumeBox">
+						<input type="text" id="NameBox">
+						<button onclick="resume('${file._id}')" class="btn btn-primary">Resume</button>
+					</span>
+				`;
 				// console.log(file);
 				file_html += `
 				<tr id="${file._id}">
 					<th scope="row">${counter}</th>
 					<td>${file.name}</td>
-					<td>${file.progress}</td>
+					<td>${file.progress.toFixed(2)}%</td>
 					<td>${file.status}</td>
-					<td>${file.size}</td>
+					<td>${humanize(file.size)}</td>
 					<td>${new Date(file.created)}</td>
-					<td></td>
+					<td>${functionalities}</td>
+					<td><button onclick="delete_file(this)" class="btn btn-danger">Delete</button></td>
 				</tr>
 				`;
 				counter += 1;
 			}
 			document.getElementById("file_data").innerHTML = file_html;
+		}
+
+		function delete_file(elem) {
+			let main_elem = elem.parentElement.parentElement;
+			console.log(main_elem, main_elem.getAttribute("id"), main_elem.remove);
+			remove(main_elem.getAttribute("id")).then((res) => {
+				console.log(res);
+				main_elem.remove();
+			}).catch((err) => {
+				console.log("Error", err);
+			});
 		}
 
 		function playHandler(elem) {
@@ -113,10 +134,14 @@
 			}
 		}
 
+		function remove(identifier) {
+			return request.delete("/files/" + identifier + "?user=" + user);
+		}
+
 		function cancel(elem) {
 			// console.log("SSS", "/files/" + SelectedFile.name + "?user=" + user);
 			upload_state = "canceled";
-			request.delete("/files/" + SelectedFile.name + "?user=" + user).then((res) => {
+			remove(SelectedFile.name).then((res) => {
 				console.log(res);
 				location.reload();
 			}).catch((err) => {
@@ -125,7 +150,7 @@
 		}
 		
 		function Ready(){ 
-			if(window.File && window.FileReader){ //These are the relevant HTML5 objects that we are going to use 
+			if(window.File && window.FileReader){
 				document.getElementById('UploadButton').addEventListener('click', StartUpload);  
 				document.getElementById('FileBox').addEventListener('change', FileChosen);
 			}
@@ -190,13 +215,13 @@
 		}
 
 		socket.on('MoreData', function (data){
-			UpdateBar(data['Percent']);
-			var Place = data['Place'] * chunk_size; //The Next Blocks Starting Position
-			console.log("Place =", Place); 
+			UpdateBar(data['progress']);
+			var cursor = data['cursor'] * chunk_size; //The Next Blocks Starting Position
+			console.log("cursor =", cursor); 
 			var NewFile; //The Variable that will hold the new Block of Data
 			// console.log(SelectedFile);
 			// chunk_size -> Get this value from server
-			NewFile = SelectedFile.slice(Place, Place + Math.min(chunk_size, (SelectedFile.size - Place)));
+			NewFile = SelectedFile.slice(cursor, cursor + Math.min(chunk_size, (SelectedFile.size - cursor)));
 			if(upload_state == "paused") {
 				current_data = NewFile;
 			} else {
@@ -220,6 +245,15 @@
 			document.getElementById('percent').innerHTML = (Math.round(percent*100)/100) + '%';
 			var MBDone = Math.round(((percent/100.0) * SelectedFile.size) / 1048576);
 			document.getElementById('MB').innerHTML = MBDone;
+		}
+
+		function humanize(num, decimals=2) {
+			if(num == 0) return '0 Bytes';
+			let k = 1024,
+				dm = decimals,
+				sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
+				i = Math.floor(Math.log(num) / Math.log(k));
+			return parseFloat((num / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 		}
 
 		AdminSocket.on("open", function(data) {

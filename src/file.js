@@ -35,6 +35,16 @@ class File {
 		}
 	}
 
+	get db() {
+		this._db = this._db || config.get("DB.mongo.db")["uploader"];
+		return this._db;
+	}
+
+	get collection() {
+		this._collection = this._collection || this.db.collection("files");
+		return this._collection;
+	}
+
 	/**
 	 * Return percent of uploaded file
 	 */
@@ -56,6 +66,15 @@ class File {
 	}
 
 	save() {
+		this.collection.findOneAndUpdate(
+			{ user: this.user, name: this.file.name },
+			{ $set: {
+				progress: 100,
+				cursor: f.size,
+				status: "completed",
+				updated: Date.now()
+			}},
+		);
 	}
 
 	delete() {
@@ -108,7 +127,7 @@ class Uploader {
 	}
 
 	start() {
-		return new Promise((resolve, reject) => { 
+		// return new Promise((resolve, reject) => { 
 			let cursor = 0, downloaded = 0;
 			if(this.file.stat && this.file.stat.isFile()) {
 				downloaded = this.file.stat.size; 
@@ -116,12 +135,21 @@ class Uploader {
 			}
 			let progress = (downloaded / this.file.total_size) * 100;
 			console.log("Starting", progress, downloaded);
+			return this.updateDatabase({
+				cursor: cursor,
+				downloaded: downloaded,
+				progress: progress,
+			})
+		// });
+	}
 
+	updateDatabase(data) {
+		return new Promise((resolve, reject) => {
 			let update_data = {
 				$set: {
-					cursor: cursor,
-					downloaded: downloaded,
-					progress: progress,
+					cursor: data.cursor,
+					downloaded: data.downloaded,
+					progress: data.progress,
 					updated: Date.now(),
 					status: "pending",
 				},
@@ -129,23 +157,19 @@ class Uploader {
 					size: this.file.total_size,
 					created: Date.now()
 				},
-				/*
-				$max: {
-				}
-				*/
 			}
 
-			// console.log(update_data);
+			console.log(update_data);
 			this.collection.findOneAndUpdate(
 				{ user: this.user, name: this.file.name, /* status: { $ne: "completed" }*/ }, 
 				update_data, 
 				{ upsert: true, returnOriginal: false }
 			).then((res) => {
-				console.log(res);
+				// console.log(res);
 				let doc = res.value || {
-					cursor: cursor,
-					downloaded: downloaded,
-					progress: progress,
+					cursor: data.cursor,
+					downloaded: data.downloaded,
+					progress: data.progress,
 					created: Date.now(),
 					updated: Date.now(),
 				};
@@ -160,7 +184,9 @@ class Uploader {
 					size: doc.size,
 					created: doc.created,
 					updated: doc.updated,
+					mongo_progress: doc.progress
 				}
+				console.log("$redis", cache_data);
 				this.cache.execute("HSET", this.user, this.file.name, JSON.stringify(cache_data));
 				resolve({ cursor: doc.cursor, progress: doc.progress, downloaded: doc.downloaded });
 			}).catch((err) => {
@@ -169,73 +195,87 @@ class Uploader {
 		});
 	}
 
+	updateMongo(data) {
+		this.collection.findOneAndUpdate(
+			{ user: this.user, name: this.file.name },
+			{ $set: {
+				progress: data.progress,
+				cursor: data.cursor,
+				status: data.status,
+				updated: Date.now()
+			}},
+		);
+	}
+
+	updateUpload(f, cursor, progress) {
+		// console.log("check mongo", progress, f.mongo_progress, progress - f.mongo_progress)
+		if(progress - f.mongo_progress > 5) {
+			console.log("Logging to mongodb");
+			this.updateMongo({
+				progress: progress,
+				cursor: cursor,
+				status: "pending",
+			});
+			f.mongo_progress = progress;
+		}
+		f.progress = progress;
+		f.updated = Date.now();
+		f.cursor = cursor;
+		// console.log("Update $redis", f);
+		return this.cache.execute("HSET", this.user, this.file.name, JSON.stringify(f));
+	}
+
+	finishUpload(data) {
+		this.updateMongo(data);
+		this.cache.execute("HDEL", this.user, this.file.name);
+	}
+
 	upload(data) {
 		return new Promise(async (resolve, reject) => {
-		let Name = data['Name'];// This should be id
+			let Name = data['Name'];// This should be id
 			let f;
 			try {
 				f = await this.cache.execute("HGET", this.user, Name);
 				f = JSON.parse(f);
-				console.log("last sync data", f);
+				console.log("last sync data", f.downloaded, f.progress);
 			} catch(err) {
 				return reject(err);
 			}
-		f.downloaded += data['Data'].length;
-		if(f.downloaded >= f.size) //If File is Fully Uploaded
-		{
-			this.file.writeSync(data['Data']);
-			console.log("All data uploaded");
-			// save in mongo
-			this.collection.findOneAndUpdate(
-				{ user: this.user, name: this.file.name },
-				{ $set: {
-					progress: 100,
+			f.downloaded += data['Data'].length;
+			if(f.downloaded >= f.size) { // When File is fully uploaded
+				this.file.writeSync(data['Data']);
+				console.log("All data uploaded");
+				this.finishUpload({
 					cursor: f.size,
+					progress: 100,
 					status: "completed",
-					updated: Date.now()
-				}},
-			);
-			this.cache.execute("HDEL", this.user, this.file.name);
-			resolve({ "Place": this.file.total_size, Percent: 100 });
-		} /* else if(f.buffered_data > this.buffer_size){ //If the Data Buffer reaches 10MB = 10485760 bytes
-			f.buffered_data = "";
-			this.collection.findOneAndUpdate(
-				{ user: this.user, name: this.file.name },
-				{ $set: {
-					progress: Percent,
-					cursor: Files[Name]['FileSize'],
-					status: "completed",
-					updated: Date.now()
-				}},
-			);
-			// this.saveDatabases();
-			resolve({ 'Place' : Place, 'Percent' :  Percent });
-		} */ else {
-			// var Place = Files[Name]['Downloaded'] / this.chunk_size;
-			// var Percent = (Files[Name]['Downloaded'] / Files[Name]['FileSize']) * 100;
-			let written = this.file.writeSync(data['Data']);
-			console.log("ADHA", written, data['Data'].length, f.downloaded);
-			var cursor = f.downloaded / this.chunk_size;
-			var progress = (f.downloaded / f.size) * 100;
-
-			if(f.progress - progress > 5) {
+				});
+				resolve({ "cursor": this.file.total_size, progress: 100 });
+			} /* else if(f.buffered_data > this.buffer_size){ //If the Data Buffer reaches 10MB = 10485760 bytes
+				f.buffered_data = "";
 				this.collection.findOneAndUpdate(
 					{ user: this.user, name: this.file.name },
 					{ $set: {
 						progress: progress,
-						cursor: cursor,
-						status: "pending",
+						cursor: Files[Name]['FileSize'],
+						status: "completed",
 						updated: Date.now()
 					}},
 				);
-				f.sync_mongo = Date.now();
+				// this.saveDatabases();
+				resolve({ 'cursor' : cursor, 'progress' :  progress });
+			} */ else {
+				let written = this.file.writeSync(data['Data']);
+				console.log("Uploaded", written, data['Data'].length, f.downloaded);
+				var cursor = f.downloaded / this.chunk_size;
+				var progress = (f.downloaded / f.size) * 100;
+
+				this.updateUpload(f, cursor, progress).then((res) => {
+				}).catch((err) => {
+					console.log(err);
+				});
+				resolve({ 'cursor' : cursor, 'progress' :  progress });
 			}
-			f.progress = progress;
-			f.updated = Date.now();
-			f.cursor = cursor;
-			this.cache.execute("HSET", this.user, this.file.name, JSON.stringify(f));
-			resolve({ 'Place' : cursor, 'Percent' :  progress });
-		}
 		});
 	}
 

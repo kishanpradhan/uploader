@@ -1,7 +1,9 @@
 const http = require("http");
+const socket_server = require("socket.io");
 
-var boot = require("./boot");
-// console.log("Booting", boot);
+const boot = require("./boot");
+const settings = require("./settings");
+
 	
 var router = require("./src/router");
  
@@ -56,11 +58,11 @@ boot((err, app) => {
 
 	mountRoutes(app);
 	const server= http.createServer(app);
-	let io = require('socket.io').listen(server);
+	let io = socket_server.listen(server);
 	mountSockets(io);
 	// errorHandler();
 	// gracefulExitHandler();
-	let port = 8080;
+	let port = settings.PORT || 3001;
 	server.listen(port, (err) => {
 		if(err) {
 			return console.log("Error", err);

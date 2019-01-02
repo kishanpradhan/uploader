@@ -38,7 +38,8 @@ exports.FileHandler = function(req, res) {
 	if(req.method.toLowerCase() == "get") {
 		promise = repo(req.query.user).getAll();
 	} else if(req.method.toLowerCase() == "post") {
-		let file = new File(user, data['Name'], data['Size']);
+		let data = req.body;
+		let file = new File(req.query.user, data['Name'], data['Size']);
 		let uploader = new Uploader(user, file);
 		promise = uploader.start();
 	}
@@ -76,14 +77,13 @@ exports.socketHandler = function(io) {
 		let user = socket.handshake.query.user;
 		console.log("Socket connected", user);
 
-		socket.on('Start', function (data) { //data contains the variables that we passed through in the html file
+		socket.on('Start', function (data) { 
 			console.log("Starting file upload", data);
 			let file = new File(user, data['Name'], data['Size']);
 			let uploader = new Uploader(user, file);
 			uploader.start().then((res) => {
-				console.log("RESUT", res);
-				// let Place = Stat.size / 524288;
-				socket.emit('MoreData', { 'Place' : res.cursor, Percent : res.progress });
+				// console.log("Start stage", res);
+				socket.emit('MoreData', { 'cursor' : res.cursor, progress : res.progress });
 			}).catch((err) => {
 				console.log("Error", err);
 				socket.emit('Error', err);
@@ -96,7 +96,7 @@ exports.socketHandler = function(io) {
 			let file = new File(user, data['Name'], data['Size']);
 			let uploader = new Uploader(user, file);
 			uploader.upload(data).then((res) => {
-				if(res.Percent == 100) {
+				if(res.progress == 100) {
 					socket.emit("Done", "url_to_file");
 				} else {
 					socket.emit('MoreData', res);
@@ -109,6 +109,7 @@ exports.socketHandler = function(io) {
 
 		socket.on('disconnect', function (reason){
 			console.log("Disconnected", user, reason);
+			// Update mongo the file meta data
 		});
 	});
 }

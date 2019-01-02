@@ -1,3 +1,5 @@
+const mongo = require("mongodb");
+
 const config = require("../config");
 
 
@@ -27,7 +29,12 @@ class FileRepo {
 
 	delete(id) {
 		// return new Promise((resolve, reject) => {
-		return this.collection.deleteOne({ user: this.user, name: id });
+		try {
+			return this.collection.deleteOne({ user: this.user, $or: [{ name: id }, { _id: mongo.ObjectId(id) }] });
+		} catch(err) {
+			return this.collection.deleteOne({ user: this.user, name: id });
+		}
+			
 		/*
 			return this.updateOne(
 				{ user: this.user, name: id },
